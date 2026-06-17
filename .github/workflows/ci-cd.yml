@@ -1,0 +1,206 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # ============================================================
+  # STAGE 1 — BUILD
+  # Clone the repo and build the JAR artefact using Maven
+  # ============================================================
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven (compile + package)
+        run: mvn clean package -DskipTests -B
+
+      - name: Upload JAR artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/task-manager-1.0.0.jar
+          retention-days: 5
+
+  # ============================================================
+  # STAGE 2 — TEST
+  # Run unit + integration tests, generate JaCoCo coverage
+  # ============================================================
+  test:
+    name: "Test"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run all tests with coverage
+        run: mvn verify -B
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+
+  # ============================================================
+  # STAGE 3 — CODE ANALYSIS (SonarCloud)
+  # Static analysis + quality gate enforcement
+  # ============================================================
+  code-analysis:
+    name: "Code Analysis"
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (full history for Sonar)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build, test, and analyze
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          mvn verify sonar:sonar
+          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+          -Dsonar.organization=${{ vars.SONAR_ORG }}
+          -B
+
+      - name: SonarCloud Quality Gate check
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ============================================================
+  # STAGE 4 — DOCKER BUILD & PUSH
+  # Build Docker image and push to GitHub Container Registry
+  # ============================================================
+  docker:
+    name: "Docker Build & Push"
+    needs: code-analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Package JAR for Docker
+        run: mvn clean package -DskipTests -B
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/task-manager
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+  # ============================================================
+  # STAGE 5 — DEPLOY
+  # Pull image and run with Docker Compose
+  # ============================================================
+  deploy:
+    name: "Deploy"
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy with Docker Compose
+        env:
+          IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/task-manager:${{ github.sha }}
+        run: docker compose up -d
+
+      - name: Wait for application to start
+        run: sleep 15
+
+      - name: Health check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/actuator/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed with status: $STATUS"
+            docker compose logs
+            exit 1
+          fi
+          echo "Application is healthy!"
+
+      - name: Smoke test — create a task
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/tasks \
+            -H "Content-Type: application/json" \
+            -d '{"title":"Smoke test task","description":"Created by pipeline","status":"TODO","priority":"HIGH"}')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "Smoke test failed with status: $HTTP_CODE"
+            exit 1
+          fi
+          echo "Smoke test passed!"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down
