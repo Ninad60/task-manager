@@ -100,8 +100,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: >
           mvn verify sonar:sonar
-          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
-          -Dsonar.organization=${{ vars.SONAR_ORG }}
+          -Dsonar.projectKey=Ninad60_task-manager
+          -Dsonar.organization=ninad60
           -B
 
       - name: SonarCloud Quality Gate check
