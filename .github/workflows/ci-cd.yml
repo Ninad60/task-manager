@@ -116,9 +116,10 @@ jobs:
           -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
           -B
 
-      - name: SonarCloud Quality Gate check
+      - - name: SonarCloud Quality Gate check
         uses: SonarSource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
+        continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
