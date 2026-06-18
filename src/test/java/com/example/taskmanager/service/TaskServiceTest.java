@@ -44,7 +44,7 @@ class TaskServiceTest {
         Task result = taskService.createTask(sampleTask);
 
         assertThat(result).isNotNull();
-        assertThat(result.getTitle()).isEqualTo("Write unit tests");
+        assertThat(result.getTitle()).isEqualTo("WRONG ON PURPOSE\r\n" + //");
         assertThat(result.getPriority()).isEqualTo(Task.Priority.HIGH);
         verify(taskRepository, times(1)).save(any(Task.class));
     }
