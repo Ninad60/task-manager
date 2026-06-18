@@ -8,10 +8,6 @@ on:
 
 jobs:
 
-  # ============================================================
-  # STAGE 1 — BUILD
-  # Clone the repo and build the JAR artefact using Maven
-  # ============================================================
   build:
     name: "Build"
     runs-on: ubuntu-latest
@@ -26,7 +22,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build with Maven (compile + package)
+      - name: Build with Maven
         run: mvn clean package -DskipTests -B
 
       - name: Upload JAR artefact
@@ -36,10 +32,6 @@ jobs:
           path: target/task-manager-1.0.0.jar
           retention-days: 5
 
-  # ============================================================
-  # STAGE 2 — TEST
-  # Run unit + integration tests, generate JaCoCo coverage
-  # ============================================================
   test:
     name: "Test"
     needs: build
@@ -67,10 +59,6 @@ jobs:
             target/surefire-reports/
             target/site/jacoco/
 
-  # ============================================================
-  # STAGE 3 — CODE ANALYSIS (SonarCloud)
-  # Static analysis + quality gate enforcement
-  # ============================================================
   code-analysis:
     name: "Code Analysis"
     needs: test
@@ -116,7 +104,7 @@ jobs:
           -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
           -B
 
-      - - name: SonarCloud Quality Gate check
+      - name: SonarCloud Quality Gate check
         uses: SonarSource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         continue-on-error: true
@@ -125,10 +113,6 @@ jobs:
         with:
           scanMetadataReportFile: target/sonar/report-task.txt
 
-  # ============================================================
-  # STAGE 4 — DOCKER BUILD & PUSH
-  # Build Docker image and push to GitHub Container Registry
-  # ============================================================
   docker:
     name: "Docker Build & Push"
     needs: code-analysis
@@ -164,10 +148,6 @@ jobs:
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
-  # ============================================================
-  # STAGE 5 — DEPLOY
-  # Pull image and run with Docker Compose
-  # ============================================================
   deploy:
     name: "Deploy"
     needs: docker
@@ -204,7 +184,7 @@ jobs:
           fi
           echo "Application is healthy!"
 
-      - name: Smoke test — create a task
+      - name: Smoke test - create a task
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/tasks \
             -H "Content-Type: application/json" \
