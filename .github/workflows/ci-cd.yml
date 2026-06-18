@@ -95,13 +95,25 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
-      - name: Build, test, and analyze
+      - name: Build and test with coverage
+        run: mvn clean verify -B
+
+      - name: Verify JaCoCo report exists
+        run: |
+          echo "=== Looking for JaCoCo reports ==="
+          find target -name "jacoco*" -type f 2>/dev/null
+          echo "=== XML report content (first 5 lines) ==="
+          head -5 target/site/jacoco/jacoco.xml 2>/dev/null || echo "XML report NOT found"
+
+      - name: SonarCloud analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: >
-          mvn verify sonar:sonar
+          mvn sonar:sonar
           -Dsonar.projectKey=Ninad60_task-manager
           -Dsonar.organization=ninad60
+          -Dsonar.host.url=https://sonarcloud.io
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
           -B
 
       - name: SonarCloud Quality Gate check
