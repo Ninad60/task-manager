@@ -143,7 +143,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/task-manager
+          IMAGE=ghcr.io/ninad60/task-manager
           docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
@@ -168,7 +168,7 @@ jobs:
 
       - name: Deploy with Docker Compose
         env:
-          IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/task-manager:${{ github.sha }}
+          IMAGE_TAG: ghcr.io/ninad60/task-manager:${{ github.sha }}
         run: docker compose up -d
 
       - name: Wait for application to start
